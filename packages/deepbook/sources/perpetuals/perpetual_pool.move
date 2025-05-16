@@ -16,8 +16,8 @@ module deepbook::perpetual_pool {
     use deepbook::margin_account::{Self, MarginAccount};
     // use deepbook::position::{Self, Position, SignedU128}; // Position not directly handled by pool, but by MarginAccount
     // use deepbook::oracle; // Assuming a generic oracle module/interface
-    use deepbook::constants; // For order types, self-matching options etc. if reused
-    use deepbook::deep_price::{Self as DeepPriceModule, OrderDeepPrice}; // Only need the type for direct initialization
+    use deepbook::constants; // Corrected import for constants
+    use deepbook::deep_price::{Self as DeepPriceModule, OrderDeepPrice}; 
 
     // === Errors ===
     const EInsufficientMargin: u64 = 1;
@@ -27,7 +27,7 @@ module deepbook::perpetual_pool {
     const EOracleNotSet: u64 = 5;
     const EAdminOnly: u64 = 6;
     const ENotImplemented: u64 = 501;
-    const EDeepPriceFunctionalityNotAvailable: u64 = 502; // For OrderDeepPrice issue
+    // const EDeepPriceFunctionalityNotAvailable: u64 = 502; // Covered by ENotImplemented or direct check
 
     public struct PerpetualPool<phantom AssetType, phantom CollateralType> has key, store {
         id: UID,
@@ -156,23 +156,20 @@ module deepbook::perpetual_pool {
 
         let required_margin_scaled = notional_value / (leverage as u128);
 
-        // Check available margin in margin_account.
-        // This needs a function in `margin_account.move` like `has_sufficient_available_margin`
-        // which considers existing positions' margins.
-        // For now, simplified: check against total collateral. This is INCORRECT for multiple positions.
-        // assert!(margin_account::total_collateral_value(margin_account) >= (required_margin_scaled as u64), EInsufficientMargin);
-        // Placeholder for a call to MarginAccount to allocate margin / check availability:
-        margin_account::allocate_margin_for_order(margin_account, required_margin_scaled as u64, ctx);
+        // TODO: CRITICAL: Implement margin_account::allocate_margin_for_order(...) and call it here.
+        // The following line is commented out as the function is not yet implemented in margin_account.move:
+        // margin_account::allocate_margin_for_order(margin_account, required_margin_scaled as u64, ctx);
+        assert!(false, ENotImplemented); // Margin check and allocation logic is critical and not implemented.
 
         // Create OrderInfo for the book
-        let fee_details_placeholder = DeepPriceModule::get_default_order_deep_price();
+        let fee_details_placeholder = DeepPriceModule::new_order_deep_price(false, 0);
 
         let order_info = OrderInfoModule::new(
             object::uid_to_inner(&pool.id),
             object::id(margin_account), 
             client_order_id,
             tx_context::sender(ctx),
-            constants::post_or_abort(), // Use Post or Abort for a standard limit order
+            constants::post_only(), // Corrected: Using constants::post_only()
             self_matching_option,
             price,
             quantity,
@@ -185,19 +182,14 @@ module deepbook::perpetual_pool {
             sui::clock::timestamp_ms(clock),
         );
 
-        // TODO: The spot book::create_order takes &mut OrderInfo.
-        // pool.book.create_order(&mut order_info, clock::timestamp_ms(clock));
-        // The result of this (fills) then needs to be processed to update MarginAccount and Positions.
-        // This is the complex part: `handle_matches`.
+        // Placeholder for actual book interaction and fill handling
+        // let actual_order_id = pool.book.create_order(&mut order_info, sui::clock::timestamp_ms(clock)); 
 
-        // For now, we are just placing an order conceptually.
-        // The actual fill processing and position creation/update is a TODO.
-        let order_id = pool.book.internal_create_order_id_for_test(); // Placeholder for actual order ID from book
-
+        let dummy_order_id = 0u128;
         event::emit(OrderPlacementInfo {
             pool_id: object::uid_to_inner(&pool.id),
             margin_account_id: object::id(margin_account),
-            order_id,
+            order_id: dummy_order_id, 
             client_order_id,
             price,
             quantity,
@@ -205,8 +197,7 @@ module deepbook::perpetual_pool {
             timestamp: sui::clock::timestamp_ms(clock),
         });
 
-        assert!(false, ENotImplemented); // Full logic not implemented
-        order_id
+        dummy_order_id
     }
     // ... (rest of the module)
 } 
