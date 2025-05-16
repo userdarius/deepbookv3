@@ -10,9 +10,10 @@ module deepbook::perpetual_pool {
     // use sui::coin::Coin;       // For collateral type - CollateralType phantom is enough for now
     use sui::event;
     use std::option::{Self, Option}; // Corrected import for Option
+    use std::vector;
 
     use deepbook::book::{Self, Book};
-    use deepbook::order_info::{Self as OrderInfoModule, OrderInfo};
+    use deepbook::order_info; // Simplified import
     use deepbook::margin_account::{Self, MarginAccount};
     // use deepbook::position::{Self, Position, SignedU128}; // Position not directly handled by pool, but by MarginAccount
     // use deepbook::oracle; // Assuming a generic oracle module/interface
@@ -66,7 +67,17 @@ module deepbook::perpetual_pool {
         timestamp: u64,
     }
 
-    // TODO: TradeExecuted event with more details
+    public struct TradeExecuted<phantom AssetType, phantom CollateralType> has copy, drop, store {
+        pool_id: ID,
+        taker_margin_account_id: ID,
+        maker_margin_account_id: ID, 
+        order_id_taker: u128, // client_order_id of taker or book-generated ID
+        order_id_maker: u128, // book-generated ID of maker order
+        price: u64,
+        quantity: u64,
+        is_taker_bid: bool, // Was the taker buying or selling?
+        timestamp: u64,
+    }
 
     public fun new_perpetual_pool<AssetType, CollateralType>(
         admin: address,
@@ -122,6 +133,27 @@ module deepbook::perpetual_pool {
         pool.index_price_oracle_id = std::option::some(oracle_id);
     }
 
+    fun handle_matches_and_update_positions<AssetType, CollateralType>(
+        _pool: &mut PerpetualPool<AssetType, CollateralType>,
+        _taker_margin_account: &mut MarginAccount<CollateralType>,
+        order_info_ref: &order_info::OrderInfo, // Changed to qualified type
+        _clock: &Clock,
+        _ctx: &mut TxContext
+    ) {
+        // let fills = order_info::fills(order_info_ref); // Assuming a public getter for fills vector
+        // let i = 0;
+        // while(i < vector::length(&fills)) {
+        //    let fill: &Fill = vector::borrow(&fills, i);
+            // TODO: Process each fill
+            // - Identify maker margin account (from fill.maker_balance_manager_id)
+            // - Update/create positions for taker and maker
+            // - Settle P&L and fees
+            // - Emit TradeExecuted event
+        //    i = i + 1;
+        // };
+        assert!(false, ENotImplemented); // Full match handling not implemented yet
+    }
+
     // --- Public-Mutative Functions: Trading ---
 
     public fun place_limit_order<AssetType, CollateralType>(
@@ -156,15 +188,14 @@ module deepbook::perpetual_pool {
 
         let required_margin_scaled = notional_value / (leverage as u128);
 
-        // TODO: CRITICAL: Implement margin_account::allocate_margin_for_order(...) and call it here.
-        // The following line is commented out as the function is not yet implemented in margin_account.move:
-        // margin_account::allocate_margin_for_order(margin_account, required_margin_scaled as u64, ctx);
-        assert!(false, ENotImplemented); // Margin check and allocation logic is critical and not implemented.
+        // Call the margin allocation/check function from margin_account module
+        margin_account::allocate_margin_for_order(margin_account, required_margin_scaled as u64);
+        // If allocate_margin_for_order asserts on failure, execution stops here if margin is insufficient.
 
         // Create OrderInfo for the book
         let fee_details_placeholder = DeepPriceModule::new_order_deep_price(false, 0);
 
-        let order_info = OrderInfoModule::new(
+        let mut order_info_val = order_info::new(
             object::uid_to_inner(&pool.id),
             object::id(margin_account), 
             client_order_id,
@@ -182,14 +213,19 @@ module deepbook::perpetual_pool {
             sui::clock::timestamp_ms(clock),
         );
 
-        // Placeholder for actual book interaction and fill handling
-        // let actual_order_id = pool.book.create_order(&mut order_info, sui::clock::timestamp_ms(clock)); 
+        book::create_order(&mut pool.book, &mut order_info_val, sui::clock::timestamp_ms(clock));
+        
+        handle_matches_and_update_positions(pool, margin_account, &order_info_val, clock, ctx);
+        
+        // TODO: Determine actual order_id if part of it is resting, or if it was fully filled/cancelled.
+        // For now, client_order_id can represent the user's intent if they need to track it.
+        // The fills in order_info provide details of what happened.
+        let returned_order_id = client_order_id as u128; // Placeholder
 
-        let dummy_order_id = 0u128;
         event::emit(OrderPlacementInfo {
             pool_id: object::uid_to_inner(&pool.id),
             margin_account_id: object::id(margin_account),
-            order_id: dummy_order_id, 
+            order_id: returned_order_id, 
             client_order_id,
             price,
             quantity,
@@ -197,7 +233,7 @@ module deepbook::perpetual_pool {
             timestamp: sui::clock::timestamp_ms(clock),
         });
 
-        dummy_order_id
+        returned_order_id
     }
     // ... (rest of the module)
 } 

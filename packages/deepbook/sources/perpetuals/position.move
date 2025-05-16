@@ -97,6 +97,11 @@ module deepbook::position {
         &pos.id
     }
 
+    // Getter for collateral_amount
+    public fun get_collateral_amount(pos: &Position): u64 {
+        pos.collateral_amount
+    }
+
     // Helper to subtract SignedU128 values: a - b. Returns a SignedU128.
     fun sub_signed_u128(a: SignedU128, b: SignedU128): SignedU128 {
         if (a.is_negative == b.is_negative) {
